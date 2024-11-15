@@ -5,51 +5,79 @@ from PIL import Image
 
 import torch
 
-from torch import Generator, Tensor
+from torch import Generator
 from transformers import T5EncoderModel
-from optimum.quanto import freeze, quantize, qfloat8_e4m3fnuz, qfloat8_e5m2
+from optimum.quanto import freeze, quantize, qfloat8_e5m2
 
-from diffusers import FluxTransformer2DModel, FluxPipeline, FlowMatchEulerDiscreteScheduler, AutoencoderKL
+from diffusers import FluxTransformer2DModel, FluxPipeline
 from diffusers.models.transformers.transformer_flux import FluxTransformer2DModel
 from diffusers.pipelines.flux.pipeline_flux import FluxPipeline
-from transformers import CLIPTextModel, CLIPTokenizer,T5EncoderModel, T5TokenizerFast, CLIPProcessor, CLIPVisionModelWithProjection
-
-
+from transformers import T5EncoderModel, CLIPProcessor, CLIPVisionModelWithProjection
 
 from io import BytesIO
 from os import urandom
-from random import sample, shuffle
-
-import nltk
-
-nltk.download('words')
-nltk.download('universal_tagset')
-nltk.download('averaged_perceptron_tagger')
-
-from nltk.corpus import words
-from nltk import pos_tag
-
+from random import sample
 
 SAMPLE_COUNT = 5
-BASELINE_AVERAGE = 45.0
+BASELINE_AVERAGE = 20
 
-
-AVAILABLE_WORDS = [word for word, tag in pos_tag(words.words(), tagset='universal') if tag == "ADJ" or tag == "NOUN"]
 
 
 def generate_random_prompt():
-    # sampled_words = sample(AVAILABLE_WORDS, k=min(len(AVAILABLE_WORDS), min(urandom(1)[0] % 32, 8)))
-    # shuffle(sampled_words)
-
-    prompts = [
-        "A beautiful sunset over the mountains",
-        "A futuristic cityscape at night",
-        "A serene beach with crystal clear water",
-        "A dense forest with rays of sunlight",
-        "A bustling market in a small village"
+    PROMPTS = [
+        "painting of King Henry VIII carrying an umbrella",
+        "Fox Mulder and a chinchilla walking down a road in the style of an old fashioned photograph",
+        "photo of a gas burner by a soft pretzel",
+        "photo of Shyster standing street lights on at night",
+        "cute young man eating a plant over a fence in the style of an old fashioned photograph",
+        "Krusty the Clown with a cutter playing in sand in the style of a vector drawing",
+        "Judge Joe Dredd doing a fashion show at a town",
+        "man standing in batters box, while a pitcher pitches in the style of a 3D render",
+        "elastic old man saying something",
+        "photo of a frightening father throwing a white Frisbee in a factory",
+        "Eddard Stark selling fresh fruits and vegetables",
+        "bumpy clock with a cyprinodont",
+        "tenement in a cabin in the style of an installation art piece",
+        "green wild apple in a village in the style of a claymation figure",
+        "group of daring boys sitting next to a very tall building on a spaceship in the style of a DSLR photograph",
+        "a barbershop near an umbrella by a train in the style of a Rembrandt painting",
+        "dangerous Riesling at a bar",
+        "four average young men tilting around a curve in the style of a fisheye lens photograph",
+        "drawing of a hoopoe leaning on a laptop at a big city",
+        "crayon drawing of the Tower Bridge",
+        "an imaginary Unknown Soldier",
+        "seahorse walking in the woods with a pair of skis in the style of a classic photograph",
+        "Pianist nearby a English foxhound flying in the sky",
+        "masculine teddy bear next to a hotchpotch",
+        "flawed mother preparing food on a stove",
+        "painting of an enraged birdhouse downtown",
+        "lovely digital art of a jaboticaba",
+        "grandiose bottle",
+        "pass with a department store standing behind a fence on a motorcycle in the style of a Rubens painting",
+        "candid cutworm and also a bur marigold in the style of a line drawing",
+        "redheaded woodpecker with an organ-grinder by a bus",
+        "superb steel drum",
+        "painting of Jimmy Carter leaning on a boar",
+        "painting of a scary man holding a green lacewing",
+        "Wolfgang Amadeus Mozart sitting inside of a space bedroom in the style of a Vincent van Gogh painting",
+        "origami art of a restaurant beside a popinjay",
+        "screen-print t-shirt of a cuddly printer cable and also a mountain sheep",
+        "3D render of Newgrange on a tricorn",
+        "Judas Iscariot sitting on a childrens toilet",
+        "majestic oxeye daisy",
+        "paper art of a soda water in a restaurant",
+        "Victor Frankenstein showing its tools",
+        "traffic light in the style of a CCTV image",
+        "formal father bouncing on a bed near a laptop by a bicycle in the style of a caricature",
+        "majestic auditorium beside a teriyaki",
+        "lego project of a refrigerator in a river",
+        "striped petticoat",
+        "revolting ivory carving of an insignificant dog with a churn",
+        "flimsy Malay"
     ]
 
-    return sample(prompts, 1)[0]
+    return sample(PROMPTS, 1)[0]
+
 
 
 @dataclass
@@ -64,7 +92,7 @@ class CheckpointBenchmark:
 class GenerationOutput:
     prompt: str
     seed: int
-    output: Image
+    output: Image.Image | BytesIO
     generation_time: float
 
 
@@ -78,6 +106,7 @@ def compare(baseline: bytes, optimized: bytes, device: str = "cpu") -> float:
         import cv2
 
         import numpy
+        import random
 
         manual_seed(0)
         clip = CLIPVisionModelWithProjection.from_pretrained("laion/CLIP-ViT-bigG-14-laion2B-39B-b160k").to(device)
@@ -132,7 +161,8 @@ def generate(pipeline: FluxPipeline, prompt: str, seed: int):
     generation_time = perf_counter() - start
 
 
-    output.save(f"original_{seed}.png")
+    prompt_with_underscores = prompt.replace(" ", "_")
+    output.save(f"original_{prompt_with_underscores}__{seed}.png")
     
     return GenerationOutput(
         prompt=prompt,
@@ -153,10 +183,11 @@ def efficient_generate(pipeline: FluxPipeline, prompt: str, seed: int):
         output_type="pil",
         generator=Generator(pipeline.device).manual_seed(seed)
     ).images[0]
-
+    
     generation_time = perf_counter() - start
 
-    output.save(f"optimized_{seed}.png")
+    prompt_with_underscores = prompt.replace(" ", "_")
+    output.save(f"optimized_{prompt_with_underscores}__{seed}.png")
 
     return GenerationOutput(
         prompt,
@@ -192,44 +223,43 @@ def compare_checkpoints():
     # Optimized Model
     
     bfl_repo = "black-forest-labs/FLUX.1-schnell"
-    revision = "refs/pr/1"
     dtype = torch.bfloat16
-    # scheduler = FlowMatchEulerDiscreteScheduler.from_pretrained(bfl_repo, subfolder="scheduler", revision=revision)
-    # text_encoder = CLIPTextModel.from_pretrained("openai/clip-vit-large-patch14", torch_dtype=dtype)
-    # tokenizer = CLIPTokenizer.from_pretrained("openai/clip-vit-large-patch14", torch_dtype=dtype)
-    text_encoder_2 = T5EncoderModel.from_pretrained(bfl_repo, subfolder="text_encoder_2", torch_dtype=dtype, revision=revision)
-    # tokenizer_2 = T5TokenizerFast.from_pretrained(bfl_repo, subfolder="tokenizer_2", torch_dtype=dtype, revision=revision)
-    # vae = AutoencoderKL.from_pretrained(bfl_repo, subfolder="vae", torch_dtype=dtype, revision=revision)
-    transformer = FluxTransformer2DModel.from_single_file("/workspace/original_model/flux1-schnell-fp8-e4m3fn.safetensors", torch_dtype=dtype)
-    pipeline = FluxPipeline.from_pretrained(bfl_repo, transformer=None, text_encoder_2=None, torch_dtype=dtype)
+    print("Loading optimized model")
+    print("Loading Text encoder 2")
+    text_encoder_2 = T5EncoderModel.from_pretrained(bfl_repo, subfolder="text_encoder_2", torch_dtype=dtype)
+    print("Loading transformer")
+    transformer = FluxTransformer2DModel.from_single_file("https://huggingface.co/mhussainahmad/flux-fp8/blob/main/flux1-schnell-fp8.safetensors", torch_dtype=dtype)
 
     quantize(transformer, weights=qfloat8_e5m2)
     freeze(transformer)
-
     quantize(text_encoder_2, weights=qfloat8_e5m2)
     freeze(text_encoder_2)
-
-    # pipeline = FluxPipeline(
-    #     scheduler=scheduler,
-    #     text_encoder=text_encoder,
-    #     tokenizer=tokenizer,
-    #     text_encoder_2=None,
-    #     tokenizer_2=tokenizer_2,
-    #     vae=vae,
-    #     transformer=None,
-    # )
+    
+    
+    print("Loading pipeline")
+    pipeline: FluxPipeline = FluxPipeline.from_pretrained(bfl_repo, transformer=None, text_encoder_2=None, torch_dtype=dtype)
     
     pipeline.text_encoder_2 = text_encoder_2
     pipeline.transformer = transformer
 
-    pipeline.to("cuda")
+    pipeline.to("cuda") 
+    print("Warming up...")
     
+    for _ in range(2):
+        _ = pipeline(
+            "A beautiful sunset over the mountains",
+            guidance_scale=0.0,
+            num_inference_steps=4,
+            max_sequence_length=256,
+            output_type="pil",
+            generator=Generator(pipeline.device).manual_seed(6118176)
+        ).images[0]
+
 
     i = 0
 
-    # Take {SAMPLE_COUNT} samples, keeping track of how fast/accurate generations have been
     for i, baseline in enumerate(baseline_outputs):
-        print(f"Sample {i}, prompt {baseline.prompt} and seed {baseline.seed}, took baseline time {baseline.generation_time}")
+        print(f"Sample {i}, prompt {baseline.prompt} and seed {baseline.seed}")
 
         generated = i
         remaining = SAMPLE_COUNT - generated
@@ -241,11 +271,11 @@ def compare_checkpoints():
         )
         
         baseline_byte_stream = BytesIO()
-        baseline.output.save(baseline_byte_stream, format="PNG")  # Specify format if needed, e.g., "PNG", "JPEG"
+        baseline.output.save(baseline_byte_stream, format="PNG")  
         baseline_bytes = baseline_byte_stream.getvalue()
 
         generation_byte_stream = BytesIO()
-        generation.output.save(generation_byte_stream, format="PNG")  # Specify format if needed, e.g., "PNG", "JPEG"
+        generation.output.save(generation_byte_stream, format="PNG") 
         generation_bytes = generation_byte_stream.getvalue()
 
         
@@ -269,19 +299,15 @@ def compare_checkpoints():
         average_similarity = (average_similarity * generated + similarity) / (generated + 1)
 
         if average_time < baseline_average * 1.0625:
-            # So far, the average time is better than the baseline, so we can continue
             continue
 
         needed_time = (baseline_average * SAMPLE_COUNT - generated * average_time) / remaining
 
         if needed_time < average_time * 0.75:
-            # Needs %33 faster than current performance to beat the baseline,
-            # thus we shouldn't waste compute testing farther
             print("Too different from baseline, failing", file=sys.stderr)
             break
 
         if average_similarity < 0.85:
-            # Deviating too much from original quality
             print("Too different from baseline, failing", file=sys.stderr)
             break
 
