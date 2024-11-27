@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools >= 75.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "flux-schnell-edge-inference"
+description = "An edge-maxxing model submission for the 4090 Flux contest"
+requires-python = ">=3.10,<3.13"
+version = "7.0.0"
+dependencies = [
+  "diffusers @ git+https://github.com/huggingface/diffusers.git@ad5ecd1251472dbc69da1268671d41bc2d8c1caa",
+  "accelerate @ git+https://github.com/huggingface/accelerate.git@29be4788629b772a3b722076e433b5b3b5c85da3",
+  "peft @ git+https://github.com/huggingface/peft.git@d13d7a401ccf4808aaaf76480fea09a4cf4ac1f5",
+  "optimum-quanto",
+  "transformers==4.43.2",
+  "omegaconf==2.3.0",
+  "torch==2.5.1",
+  "protobuf==5.28.3",
+  "sentencepiece==0.2.0",
+  "edge-maxxing-pipelines @ git+https://github.com/womboai/edge-maxxing@7c760ac54f6052803dadb3ade8ebfc9679a94589#subdirectory=pipelines",
+  "setuptools>=75.6.0",
+]
+
+[tool.edge-maxxing]
+models = ["black-forest-labs/FLUX.1-schnell", "https://huggingface.co/mhussainahmad/flux-fp8/blob/main/flux1-schnell-fp8.safetensors"]
+
+[project.scripts]
+start_inference = "main:main"
