@@ -3,7 +3,7 @@ from transformers import T5EncoderModel, T5TokenizerFast
 import torch
 import gc
 from PIL.Image import Image
-from pipelines.models import TextToImageRequest
+from request import TextToImageRequest
 from torch import Generator
 from optimum.quanto import quantize, freeze, qfloat8_e5m2
 
